@@ -25,7 +25,7 @@ NAME=jmeter
 # defaults
 SERVER_PORT=1099
 SERVER_IP=0.0.0.0
-
+SERVER_LOG=/var/log/jmeter.log
 
 # Override defaults from /etc/sysconfig/jmeter if file is present
 [ -f /etc/sysconfig/${NAME} ] && . /etc/sysconfig/${NAME}
@@ -44,25 +44,29 @@ PIDFILE=/var/run/$NAME.pid
 
 JAVA_PID=`ps ax --width=1000 | grep "[A]pacheJMeter.jar -Dserver_port=1099 -s"|awk '{printf $1 ""}'`
 
-
-# Check that networking is up.
-[ ${NETWORKING} = "no" ] && exit 0
-
-[ -f $JMETER_PATH/bin/$NAME-server ] || exit 0
-[ -f $JMETER_PATH/bin/$NAME ] || exit 0
+RETVAL=0
 
 #
 # Function that starts the daemon/service
 #
 do_start()
 {
+
+        # Check that networking is up.
+        [ "$NETWORKING" = "yes" ] || exit 6
+
+        [ -f $JMETER_PATH/bin/$NAME-server ] || exit 5
+        [ -f $JMETER_PATH/bin/$NAME ] || exit 5
+
         [ -n "$JAVA_PID" ] && echo "$NAME already started" && exit 0
         echo -n "Starting $NAME: "
-        $JMETER_PATH/bin/$NAME-server 2>&1 &
+        $JMETER_PATH/bin/$NAME-server >> $SERVER_LOG 2>&1 &
         RETVAL=$?
-        MODE="normal"
-        echo "$NAME started in $MODE mode"
-        [ $RETVAL = 0 ] && touch /var/lock/subsys/$NAME
+        PID=$!
+        echo
+        [ $RETVAL -eq 0 ] && touch /var/lock/subsys/$NAME
+        [ $RETVAL -eq 0 ] && echo $PID > $PIDFILE
+        return $RETVAL
 }
 
 #
@@ -76,6 +80,7 @@ do_stop()
         RETVAL=$?
         echo
         [ $RETVAL = 0 ] && rm -f /var/lock/subsys/$NAME
+        return $RETVAL
 }
 
 #
@@ -96,11 +101,6 @@ do_status()
 #
 # Function that stops and restarts daemon/server
 #
-do_restart()
-{
-        do_stop
-        do_start
-}
 
 case "$1" in
   start)
@@ -113,7 +113,8 @@ case "$1" in
         do_status
         ;;
   restart|force-reload)
-        do_restart
+        do_stop
+        do_start
         ;;
   condrestart)
         [ -e /var/lock/subsys/$NAME ] && do_restart
@@ -124,4 +125,4 @@ case "$1" in
         ;;
 esac
 
-exit $RETVAL
+exit $?
